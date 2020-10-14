@@ -1,31 +1,91 @@
 <!DOCTYPE html>
 <meta charset="utf-8">
-<style>
-    .link {
-        fill: none;
-        stroke: #666;
-        stroke-width: 1.5px;
-    }
 
-    .node circle {
-        fill: #ccc;
-        stroke: #fff;
-        stroke-width: 1.5px;
-    }
+<head>
 
-    text {
-        font: 10px sans-serif;
-        pointer-events: none;
-    }
-</style>
+    <style>
+        .link {
+            fill: none;
+            stroke: rgb(0, 8, 80);
+            stroke-width: 1px;
+        }
+
+        .node circle {
+            fill: rgb(177, 0, 0);
+            stroke: rgb(29, 29, 29);
+            stroke-width: 2px;
+        }
+
+        text {
+            font: 10px sans-serif;
+            pointer-events: none;
+        }
+
+        #content {
+            margin-top: 50px;
+        }
+    </style>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+</head>
+
 
 <body>
 
+    <div class="container" id="content">
+
+        <div class="page-header">
+            <p style="text-align:center">
+                <a href="{{ url_for('root') }}"><b>Explore paper citation network</b></a>
+            </p>
+        </div>
+
+        <form action="">
+            <div class="row" id="inputBar" style="margin:0 20%;">
+                <div class="input-group" style="text-align:center">
+                    <input id="inputField" type="text" class="form-control" name="search"><br>
+                    <input type="submit" class="btn btn-primary" value="Build graph">
+                </div>
+            </div>
+        </form>
+        <br>
+
+        {% if sample_nodes %}
+        <div>
+            <p>Random papers</p>
+        </div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Abstract</th>
+                    <th scope="col">Graph</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for paper in sample_nodes %}
+                <tr>
+                    <th scope="row"></th>
+                    <td>{{ paper.title }}</td>
+                    <td>{{ paper.abstract }}</td>
+                    <td><a href="{{ url_for('serve', ss_paper_id=paper.id) }}">Build graph</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <br>
+        {% endif %}
+
+    </div>
+
+    {% if links %}
     <script src="//d3js.org/d3.v3.min.js"></script>
     <script>
 
         // http://blog.thomsonreuters.com/index.php/mobile-patent-suits-graphic-of-the-day/
         var links = {{ links | tojson }};
+        console.log(links);
 
         var nodes = {};
 
@@ -34,6 +94,8 @@
             link.source = nodes[link.source] || (nodes[link.source] = { name: link.source });
             link.target = nodes[link.target] || (nodes[link.target] = { name: link.target });
         });
+
+        console.log(nodes);
 
         var width = 1920,
             height = 1024;
@@ -96,4 +158,21 @@
         }
 
     </script>
+
+    {% else %}
+
+    <div>Paper not found</div>
+
+    {% endif %}
+
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+        integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+        crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"
+        integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1"
+        crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"
+        integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
+        crossorigin="anonymous"></script>
+
 </body>
