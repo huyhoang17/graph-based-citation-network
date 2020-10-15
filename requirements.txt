@@ -30,6 +30,7 @@ dataclasses==0.7
 decorator==4.4.1
 defer==1.0.6
 defusedxml==0.6.0
+dgl==0.5.2
 diffimg==0.2.3
 entrypoints==0.3
 facenet==1.0.5
