@@ -43,7 +43,7 @@
         <form action="">
             <div class="row" id="inputBar" style="margin:0 20%;">
                 <div class="input-group" style="text-align:center">
-                    <input id="inputField" type="text" class="form-control" name="search"><br>
+                    <input id="inputField" type="text" class="form-control" name="search" placeholder="https://arxiv.org/abs/1706.02216"><br>
                     <input type="submit" class="btn btn-primary" value="Build graph">
                 </div>
             </div>
@@ -67,8 +67,8 @@
                 {% for paper in sample_nodes %}
                 <tr>
                     <th scope="row"></th>
-                    <td>{{ paper.title }}</td>
-                    <td>{{ paper.abstract }}</td>
+                    <td><a href="{{ paper.ss_url }}"><b>{{ paper.title | truncate(80) | safe }}</b></a></td>
+                    <td>{{ paper.abstract | truncate(800) | safe }}</td>
                     <td><a href="{{ url_for('serve', ss_paper_id=paper.id) }}">Build graph</a></td>
                 </tr>
                 {% endfor %}
@@ -104,8 +104,8 @@
             .nodes(d3.values(nodes))
             .links(links)
             .size([width, height])
-            .linkDistance(450)
-            .charge(-250)
+            .linkDistance(500)
+            .charge(-100)
             .on("tick", tick)
             .start();
 
@@ -158,10 +158,6 @@
         }
 
     </script>
-
-    {% else %}
-
-    <div>Paper not found</div>
 
     {% endif %}
 

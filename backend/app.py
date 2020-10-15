@@ -31,14 +31,18 @@ with open(
         'rb') as f:
     reversed_node_mapping = pickle.load(f)
 
+with open('./data/semantic_scholar/top200.pkl', 'rb') as f:
+    top200_ids = pickle.load(f)
+
 # connect to mongo
 client = MongoClient('localhost', 27017)
 db = client['paper']
 col_v4 = db['semantic_scholar_v4']
 
 # load graph
+topk = 35
 device = 'cpu'
-g, _ = dgl.load_graphs('./data/semantic_scholar/g_cpu_v4.bin')
+g, _ = dgl.load_graphs('./data/semantic_scholar/g_v4.bin')
 g = g[0]
 g.to(device)
 
@@ -56,6 +60,17 @@ model.eval()
 doc2vec = gensim.models.Doc2Vec.load('./models/doc2vec/doc2vec.bin')
 start_alpha = 0.01
 infer_epoch = 1000
+
+
+def make_khop_ids(g, ss_dgl_ids):
+
+    nids = []
+    for ss_id in ss_dgl_ids:
+        nid = g.in_edges(ss_id)[0].unique()
+        nids.append(nid)
+
+    nids = torch.cat(nids).unique()
+    return nids
 
 
 def infer_unseen_node(json_data, topk):
@@ -195,6 +210,7 @@ def infer_existed_node(paper, topk):
     ss_dgl_ids = ss_in_ids + ss_out_ids + [ss_origin_id]
 
     # ?? make k-hop subgraph, default 1-hop ??
+    # nids = make_khop_ids(g, ss_dgl_ids)
 
     # make 1st subgraph
     first_subgraph = g.subgraph(torch.tensor(ss_dgl_ids))
@@ -235,6 +251,14 @@ def infer_existed_node(paper, topk):
                              batch_size, device)
     y_pred = y_pred.detach().numpy()
 
+    no_nodes = first_subgraph.number_of_nodes()
+    no_edges = first_subgraph.number_of_edges()
+    degree = no_edges / no_nodes
+    print(no_nodes, no_edges, degree)
+
+    if degree < 30:
+        topk = int(topk * 1.5)
+
     # get top-k most similarity
     dist_ids = np.linalg.norm(y_pred - y_pred[-1], axis=1)
     y_pred_ids = np.argsort(dist_ids)[1:topk + 1]
@@ -260,33 +284,36 @@ def infer_existed_node(paper, topk):
     result_papers = list(col_v4.find({'id': {'$in': paper_ids}}))
     result_papers.sort(key=lambda thing: paper_ids.index(thing['id']))
     result_papers.append({'title': title_paper, "s2Url": paper_url})
-    print('>>> Mongo query - {}s'.format(time.time() - start))
 
     # retrieve node for d3 visualize
     links = []
-    _src_titles = [
-        result_papers[i]['title']
-        for i in second_subgraph.edges()[0].cpu().numpy()
-    ]
-    _dst_titles = [
-        result_papers[i]['title']
-        for i in second_subgraph.edges()[1].cpu().numpy()
-    ]
-    _src_urls = [
-        result_papers[i]['s2Url']
-        for i in second_subgraph.edges()[0].cpu().numpy()
-    ]
-    _dst_urls = [
-        result_papers[i]['s2Url']
-        for i in second_subgraph.edges()[1].cpu().numpy()
-    ]
-    for index, (_src, _dst, _src_url, _dst_url) in enumerate(
-            zip(_src_titles, _dst_titles, _src_urls, _dst_urls)):
+    # NEED FIX - BUG
+    # 76c54f0b1b9cfa55c60d6aab075ef1b24618f9c7
+    # ca5c766b2d31a1f5ce8896a0a42b40a2bff9323a
+    # _src_titles = [
+    #     result_papers[i]['title']
+    #     for i in second_subgraph.edges()[0].cpu().numpy()
+    # ]
+    # _dst_titles = [
+    #     result_papers[i]['title']
+    #     for i in second_subgraph.edges()[1].cpu().numpy()
+    # ]
+
+    print(len(result_papers), torch.max(second_subgraph.edges()[0]))
+    _src_titles = []
+    for i in second_subgraph.edges()[0].cpu().numpy():
+        _src_titles.append(result_papers[i]['title'])
+
+    _dst_titles = []
+    for i in second_subgraph.edges()[1].cpu().numpy():
+        _dst_titles.append(result_papers[i]['title'])
+
+    for index, (_src, _dst) in enumerate(zip(_src_titles, _dst_titles)):
         links.append({
             'source': _src,
             'target': _dst,
-            'source_url': _src_url,
-            'target_url': _dst_url
+            # 'source_url': _src_url,
+            # 'target_url': _dst_url
         })
 
     d3_json = {
@@ -304,7 +331,9 @@ def infer_existed_node(paper, topk):
 
 def make_sample_nodes(sample_size=10):
     papers = []
-    for paper in col_v4.aggregate([{'$sample': {'size': sample_size}}]):
+
+    random_ids = random.sample(top200_ids, sample_size)
+    for paper in col_v4.find({"id": {"$in": random_ids}}):
         papers.append({
             'id': paper['id'],
             'title': paper['title'],
@@ -336,8 +365,6 @@ def root():
         json_data = req.json()
         ss_paper_id = json_data['paperId']
 
-        # check in db
-        topk = 20
         # check paper exists
         paper = list(col_v4.find({'id': ss_paper_id}))
 
@@ -366,14 +393,18 @@ def serve(ss_paper_id):
 
     # search = request.args.get('ss_paper_id')
     print('>' * 100)
-    topk = 20
     # check paper exists
     paper = list(col_v4.find({'id': ss_paper_id}))
 
     if len(paper) == 0:
         # unseen node
         # sample: 962dc29fdc3fbdc5930a10aba114050b82fe5a3e - detr
-        json_result = infer_unseen_node(ss_paper_id, topk)
+        ss_api_url = "https://api.semanticscholar.org/v1/paper/{}".format(
+            ss_paper_id)
+        header = {'User-Agent': str(ua.random)}
+        req = requests.get(ss_api_url, headers=header)
+        json_data = req.json()
+        json_result = infer_unseen_node(json_data, topk)
     else:
         # existed node
         # sample: 6b7d6e6416343b2a122f8416e69059ce919026ef - graphsage
@@ -382,7 +413,7 @@ def serve(ss_paper_id):
     links = json_result['links']
     return render_template('index.html',
                            is_existed=json_result['is_existed'],
-                           nodes=json_result['nodes'],
+                        #    nodes=json_result['nodes'],
                            links=links)
 
 
