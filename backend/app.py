@@ -102,7 +102,7 @@ def infer_unseen_node(json_data, topk):
     }
     id_graph2subgraph = dict(map(reversed, id_subgraph2graph.items()))
 
-    no_nodes = len(first_subgraph.nodes())
+    no_nodes = first_subgraph.number_of_nodes()
     # add new edges for unseen node
     _src_subgraph_node_ids1 = [id_graph2subgraph[i] for i in ss_in_ids]
     _dst_subgraph_node_ids1 = [no_nodes] * len(_src_subgraph_node_ids1)
@@ -130,6 +130,13 @@ def infer_unseen_node(json_data, topk):
         first_subgraph, first_subgraph.ndata["features"], batch_size, device
     )
     y_pred = y_pred.detach().numpy()
+
+    no_edges = first_subgraph.number_of_edges()
+    degree = no_edges / no_nodes
+    print(no_nodes, no_edges, degree)
+
+    if degree < 30:
+        topk = int(topk * 1.5)
 
     # get top-k most similarity
     dist_ids = np.linalg.norm(y_pred - y_pred[-1], axis=1)
@@ -220,7 +227,6 @@ def infer_existed_node(paper, topk):
         for new_label, old_label in zip(ss_dgl_ids, first_subgraph.nodes())
     }
     id_graph2subgraph = dict(map(reversed, id_subgraph2graph.items()))
-    no_nodes = len(first_subgraph.nodes())
 
     # ??
     origin_node_feature = g.ndata["features"][node_mapping[paper_id]]
@@ -360,7 +366,7 @@ def root():
         return render_template(
             "index.html",
             is_existed=json_result["is_existed"],
-            nodes=json_result["nodes"],
+            # nodes=json_result["nodes"],
             links=links,
         )
     else:
