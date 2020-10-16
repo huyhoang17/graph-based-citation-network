@@ -8,6 +8,7 @@ models/
 assets/
 graph/
 *.ipynb
+*.zip
 !graph/models.py
 
 # Byte-compiled / optimized / DLL files
