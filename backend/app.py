@@ -35,7 +35,7 @@ db = client["paper"]
 col_v4 = db["semantic_scholar_v4"]
 
 # load graph
-topk = 25
+topk = 20
 device = "cpu"
 g, _ = dgl.load_graphs("./data/semantic_scholar/g_v4.bin")
 g = g[0]
@@ -55,6 +55,11 @@ model.eval()
 doc2vec = gensim.models.Doc2Vec.load("./models/doc2vec/doc2vec.bin")
 start_alpha = 0.01
 infer_epoch = 1000
+
+
+# TODO
+# 1. define k-hop subgraph
+# 2. redirect url
 
 
 def make_khop_ids(g, ss_dgl_ids):
@@ -157,10 +162,13 @@ def infer_unseen_node(json_data, topk):
     # https://stackoverflow.com/a/40048951
     result_papers = list(col_v4.find({"id": {"$in": paper_ids}}))
     result_papers.sort(key=lambda thing: paper_ids.index(thing["id"]))
-    result_papers.append({"title": title_paper, "s2Url": paper_url})
+    result_papers.append(
+        {"title": title_paper, "s2Url": paper_url, "paperAbstract": abstract}
+    )
     print(">>> Mongo query - {}s".format(time.time() - start))
 
     print(len(result_papers), torch.max(second_subgraph.edges()[0]))
+
     # retrieve node for d3 visualize
     links = []
     _src_titles = [
@@ -179,7 +187,7 @@ def infer_unseen_node(json_data, topk):
 
     d3_json = {
         "time": time.time() - start,
-        # 'nodes': nodes,
+        "nodes": result_papers,
         "links": links,
         "is_existed": False,
     }
@@ -233,7 +241,6 @@ def infer_existed_node(paper, topk):
     first_subgraph.ndata["features"][-1] = origin_node_feature
 
     # make inference on unseen node
-    # WARNING: set model to eval mode
     y_pred = model.inference(
         first_subgraph, first_subgraph.ndata["features"], batch_size, device
     )
@@ -244,6 +251,7 @@ def infer_existed_node(paper, topk):
     degree = no_edges / no_nodes
     print(no_nodes, no_edges, degree)
 
+    # TODO
     if degree < 30:
         topk = int(topk * 1.5)
 
@@ -267,18 +275,9 @@ def infer_existed_node(paper, topk):
     ]
     result_papers = list(col_v4.find({"id": {"$in": paper_ids}}))
     result_papers.sort(key=lambda thing: paper_ids.index(thing["id"]))
-    result_papers.append({"title": title_paper, "s2Url": paper_url})
-
-    # retrieve node for d3 visualize
-    links = []
-    # _src_titles = [
-    #     result_papers[i]['title']
-    #     for i in second_subgraph.edges()[0].cpu().numpy()
-    # ]
-    # _dst_titles = [
-    #     result_papers[i]['title']
-    #     for i in second_subgraph.edges()[1].cpu().numpy()
-    # ]
+    result_papers.append(
+        {"title": title_paper, "s2Url": paper_url, "paperAbstract": abstract}
+    )
 
     print(len(result_papers), torch.max(second_subgraph.edges()[0]))
     _src_titles = []
@@ -289,13 +288,13 @@ def infer_existed_node(paper, topk):
     for i in second_subgraph.edges()[1].cpu().numpy():
         _dst_titles.append(result_papers[i]["title"])
 
+    # retrieve node for d3 visualize
+    links = []
     for index, (_src, _dst) in enumerate(zip(_src_titles, _dst_titles)):
         links.append(
             {
                 "source": _src,
                 "target": _dst,
-                # 'source_url': _src_url,
-                # 'target_url': _dst_url
             }
         )
 
@@ -329,25 +328,59 @@ def make_sample_nodes(sample_size=10):
     return papers
 
 
-@app.route("/", methods=["GET", "POST"])
-def root():
+def make_request_json(url):
 
-    print(">" * 100)
-    search = request.args.get("search")
+    if "semanticscholar.org" in url:
+        paper_id = url.strip("/").split("/")[-1]
+        if len(paper_id) != 40:
+            return None
 
-    sample_nodes = make_sample_nodes(sample_size=10)
-
-    if search is not None:
-        paper_id = search.strip("/").split("/")[-1]
-        if paper_id.endswith("./pdf"):
+        ss_api_url = "https://api.semanticscholar.org/v1/paper/{}".format(paper_id)
+    elif "arxiv.org" in url:
+        paper_id = url.strip("/").split("/")[-1]
+        if paper_id.endswith(".pdf"):
             paper_id = paper_id[:-4]
 
         ss_api_url = "https://api.semanticscholar.org/v1/paper/arXiv:{}".format(
             paper_id
         )
-        header = {"User-Agent": str(ua.random)}
-        req = requests.get(ss_api_url, headers=header)
-        json_data = req.json()
+    elif "aclweb.org" in url:
+        paper_id = url.strip("/").split("/")[-1]
+        if paper_id.endswith(".pdf"):
+            paper_id = paper_id[:-4]
+
+        ss_api_url = "https://api.semanticscholar.org/v1/paper/ACL:{}".format(paper_id)
+    else:
+        ss_api_url = None
+
+    if ss_api_url is not None:
+        # make request
+        try:
+            header = {"User-Agent": str(ua.random)}
+            req = requests.get(ss_api_url, headers=header)
+            json_data = req.json()
+            return json_data
+        except Exception as e:
+            print(e)
+    else:
+        return None
+
+
+@app.route("/")
+def root():
+
+    print(">" * 100)
+    search_url = request.args.get("search")
+
+    if search_url is not None:
+        json_data = make_request_json(search_url)
+        if json_data is None:
+            sample_nodes = make_sample_nodes(sample_size=10)
+            error_message = "Invalid input url! Support Semantic Scholar, Arxiv, ACL url"
+            return render_template(
+                "index.html", sample_nodes=sample_nodes, error_message=error_message
+            )
+
         ss_paper_id = json_data["paperId"]
 
         # check paper exists
@@ -362,18 +395,18 @@ def root():
             # sample: 6b7d6e6416343b2a122f8416e69059ce919026ef - graphsage
             json_result = infer_existed_node(paper[0], topk)
 
-        links = json_result["links"]
         return render_template(
             "index.html",
             is_existed=json_result["is_existed"],
             # nodes=json_result["nodes"],
-            links=links,
+            links=json_result["links"],
         )
     else:
+        sample_nodes = make_sample_nodes(sample_size=10)
         return render_template("index.html", sample_nodes=sample_nodes)
 
 
-@app.route("/paper/<ss_paper_id>")
+@app.route("/paper/<string:ss_paper_id>")
 def serve(ss_paper_id):
 
     # search = request.args.get('ss_paper_id')
@@ -381,6 +414,7 @@ def serve(ss_paper_id):
     # check paper exists
     paper = list(col_v4.find({"id": ss_paper_id}))
 
+    # BUG??
     if len(paper) == 0:
         # unseen node
         # sample: 962dc29fdc3fbdc5930a10aba114050b82fe5a3e - detr
@@ -394,12 +428,11 @@ def serve(ss_paper_id):
         # sample: 6b7d6e6416343b2a122f8416e69059ce919026ef - graphsage
         json_result = infer_existed_node(paper[0], topk)
 
-    links = json_result["links"]
     return render_template(
         "index.html",
         is_existed=json_result["is_existed"],
-        #    nodes=json_result['nodes'],
-        links=links,
+        nodes=json_result["nodes"],
+        links=json_result["links"],
     )
 
 
