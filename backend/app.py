@@ -1,10 +1,10 @@
 import gc
-import json
 import time
-import pickle
 import random
+import pickle
+from functools import wraps
 
-from flask import Flask, jsonify, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for
 import requests
 import gensim
 from pymongo import MongoClient
@@ -62,6 +62,18 @@ infer_epoch = 1000
 # 2. redirect url
 
 
+def timer(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        print(">>> Function {}: {}'s".format(func.__name__, end - start))
+        return result
+
+    return wrapper
+
+
 def make_khop_ids(g, ss_dgl_ids):
 
     nids = []
@@ -73,6 +85,69 @@ def make_khop_ids(g, ss_dgl_ids):
     return nids
 
 
+def make_sample_nodes(sample_size=10):
+    papers = []
+
+    random_ids = random.sample(top200_ids, sample_size)
+    for paper in col_v4.find({"id": {"$in": random_ids}}):
+        papers.append(
+            {
+                "id": paper["id"],
+                "title": paper["title"],
+                "abstract": paper["paperAbstract"],
+                "ss_url": paper["s2Url"],
+            }
+        )
+
+    return papers
+
+
+def make_request_json(url):
+
+    if "semanticscholar.org" in url:
+        paper_id = url.strip("/").split("/")[-1]
+        if len(paper_id) != 40:
+            return None
+
+        ss_api_url = "https://api.semanticscholar.org/v1/paper/{}".format(paper_id)
+    elif "arxiv.org" in url:
+        paper_id = url.strip("/").split("/")[-1]
+        if paper_id.endswith(".pdf"):
+            paper_id = paper_id[:-4]
+
+        # paper's version
+        # sample: xxxx.xxxxxv4
+        v_index = paper_id.find("v")
+        if v_index != -1:
+            paper_id = paper_id[:v_index]
+
+        ss_api_url = "https://api.semanticscholar.org/v1/paper/arXiv:{}".format(
+            paper_id
+        )
+    elif "aclweb.org" in url:
+        paper_id = url.strip("/").split("/")[-1]
+        if paper_id.endswith(".pdf"):
+            paper_id = paper_id[:-4]
+
+        ss_api_url = "https://api.semanticscholar.org/v1/paper/ACL:{}".format(paper_id)
+    else:
+        ss_api_url = None
+
+    if ss_api_url is not None:
+        # make request
+        try:
+            header = {"User-Agent": str(ua.random)}
+            req = requests.get(ss_api_url, headers=header)
+            json_data = req.json()
+            return json_data
+        except Exception as e:
+            print(e)
+            return None
+    else:
+        return None
+
+
+@timer
 def infer_unseen_node(json_data, topk):
 
     start = time.time()
@@ -197,6 +272,7 @@ def infer_unseen_node(json_data, topk):
     return d3_json
 
 
+@timer
 def infer_existed_node(paper, topk):
 
     start = time.time()
@@ -234,7 +310,7 @@ def infer_existed_node(paper, topk):
         int(old_label): int(new_label)
         for new_label, old_label in zip(ss_dgl_ids, first_subgraph.nodes())
     }
-    id_graph2subgraph = dict(map(reversed, id_subgraph2graph.items()))
+    # id_graph2subgraph = dict(map(reversed, id_subgraph2graph.items()))
 
     # ??
     origin_node_feature = g.ndata["features"][node_mapping[paper_id]]
@@ -279,7 +355,6 @@ def infer_existed_node(paper, topk):
         {"title": title_paper, "s2Url": paper_url, "paperAbstract": abstract}
     )
 
-    print(len(result_papers), torch.max(second_subgraph.edges()[0]))
     _src_titles = []
     for i in second_subgraph.edges()[0].cpu().numpy():
         _src_titles.append(result_papers[i]["title"])
@@ -311,61 +386,6 @@ def infer_existed_node(paper, topk):
     return d3_json
 
 
-def make_sample_nodes(sample_size=10):
-    papers = []
-
-    random_ids = random.sample(top200_ids, sample_size)
-    for paper in col_v4.find({"id": {"$in": random_ids}}):
-        papers.append(
-            {
-                "id": paper["id"],
-                "title": paper["title"],
-                "abstract": paper["paperAbstract"],
-                "ss_url": paper["s2Url"],
-            }
-        )
-
-    return papers
-
-
-def make_request_json(url):
-
-    if "semanticscholar.org" in url:
-        paper_id = url.strip("/").split("/")[-1]
-        if len(paper_id) != 40:
-            return None
-
-        ss_api_url = "https://api.semanticscholar.org/v1/paper/{}".format(paper_id)
-    elif "arxiv.org" in url:
-        paper_id = url.strip("/").split("/")[-1]
-        if paper_id.endswith(".pdf"):
-            paper_id = paper_id[:-4]
-
-        ss_api_url = "https://api.semanticscholar.org/v1/paper/arXiv:{}".format(
-            paper_id
-        )
-    elif "aclweb.org" in url:
-        paper_id = url.strip("/").split("/")[-1]
-        if paper_id.endswith(".pdf"):
-            paper_id = paper_id[:-4]
-
-        ss_api_url = "https://api.semanticscholar.org/v1/paper/ACL:{}".format(paper_id)
-    else:
-        ss_api_url = None
-
-    if ss_api_url is not None:
-        # make request
-        try:
-            header = {"User-Agent": str(ua.random)}
-            req = requests.get(ss_api_url, headers=header)
-            json_data = req.json()
-            return json_data
-        except Exception as e:
-            print(e)
-    else:
-        return None
-
-
 @app.route("/")
 def root():
 
@@ -376,31 +396,18 @@ def root():
         json_data = make_request_json(search_url)
         if json_data is None:
             sample_nodes = make_sample_nodes(sample_size=10)
-            error_message = "Invalid input url! Support Semantic Scholar, Arxiv, ACL url"
+            error_message = (
+                "Invalid input url! Support Semantic Scholar, Arxiv, ACL url"
+            )
             return render_template(
                 "index.html", sample_nodes=sample_nodes, error_message=error_message
             )
 
         ss_paper_id = json_data["paperId"]
+        print(ss_paper_id)
 
-        # check paper exists
-        paper = list(col_v4.find({"id": ss_paper_id}))
+        return redirect(url_for("serve", ss_paper_id=ss_paper_id))
 
-        if len(paper) == 0:
-            # unseen node
-            # sample: 962dc29fdc3fbdc5930a10aba114050b82fe5a3e - detr
-            json_result = infer_unseen_node(json_data, topk)
-        else:
-            # existed node
-            # sample: 6b7d6e6416343b2a122f8416e69059ce919026ef - graphsage
-            json_result = infer_existed_node(paper[0], topk)
-
-        return render_template(
-            "index.html",
-            is_existed=json_result["is_existed"],
-            # nodes=json_result["nodes"],
-            links=json_result["links"],
-        )
     else:
         sample_nodes = make_sample_nodes(sample_size=10)
         return render_template("index.html", sample_nodes=sample_nodes)
@@ -409,12 +416,22 @@ def root():
 @app.route("/paper/<string:ss_paper_id>")
 def serve(ss_paper_id):
 
-    # search = request.args.get('ss_paper_id')
-    print(">" * 100)
+    # check search bar is not empty
+    search_url = request.args.get("search")
+    error_message = None
+    if search_url is not None:
+        json_data = make_request_json(search_url)
+        if json_data is None:
+            error_message = (
+                "Invalid input url! Support Semantic Scholar, Arxiv, ACL url"
+            )
+        else:
+            ss_paper_id = json_data["paperId"]
+            return redirect(url_for("serve", ss_paper_id=ss_paper_id))
+
     # check paper exists
     paper = list(col_v4.find({"id": ss_paper_id}))
 
-    # BUG??
     if len(paper) == 0:
         # unseen node
         # sample: 962dc29fdc3fbdc5930a10aba114050b82fe5a3e - detr
@@ -430,6 +447,7 @@ def serve(ss_paper_id):
 
     return render_template(
         "index.html",
+        error_message=error_message,
         is_existed=json_result["is_existed"],
         nodes=json_result["nodes"],
         links=json_result["links"],
