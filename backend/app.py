@@ -172,6 +172,8 @@ def infer_unseen_node(json_data, topk):
     ss_dgl_ids = ss_in_ids + ss_out_ids
     ss_dgl_ids = list(set(ss_dgl_ids))
 
+    # make k-hop graph??
+
     first_subgraph = g.subgraph(torch.tensor(ss_dgl_ids))
     print(">>> 1st graph before adding new edges - {}s".format(time.time() - start))
     print(first_subgraph)
@@ -298,7 +300,7 @@ def infer_existed_node(paper, topk):
     assert ss_dgl_ids[-1] == ss_origin_id
 
     # ?? make k-hop subgraph, default 1-hop ??
-    # nids = make_khop_ids(g, ss_dgl_ids)
+    # ss_dgl_ids = make_khop_ids(g, ss_dgl_ids)
 
     # make 1st subgraph
     # no need to adding new edges
@@ -312,9 +314,9 @@ def infer_existed_node(paper, topk):
     }
     # id_graph2subgraph = dict(map(reversed, id_subgraph2graph.items()))
 
-    # ??
-    origin_node_feature = g.ndata["features"][node_mapping[paper_id]]
-    first_subgraph.ndata["features"][-1] = origin_node_feature
+    # ?? node feature for query node
+    # origin_node_feature = g.ndata["features"][node_mapping[paper_id]]
+    # first_subgraph.ndata["features"][-1] = origin_node_feature
 
     # make inference on unseen node
     y_pred = model.inference(
