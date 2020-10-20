@@ -151,7 +151,7 @@
                 {% for paper in sample_nodes %}
                 <tr>
                     <th scope="row"></th>
-                    <td><a href="{{ paper.ss_url }}"><b>{{ paper.title | truncate(80) | safe }}</b></a></td>
+                    <td><a href="{{ paper.ss_url }}"><b>{{ paper.title | truncate(100) | safe }}</b></a></td>
                     <td>{{ paper.abstract | truncate(800) | safe }}</td>
                     <td><a href="{{ url_for('serve', ss_paper_id=paper.id) }}">Build graph</a></td>
                 </tr>
@@ -159,8 +159,10 @@
             </tbody>
         </table>
         {% endif %}
+    </div>
 
-        <br>
+    <div class="container">
+        <center><a href="{{ main_url }}">{{ main_title | truncate(80) | safe }}</a></center>
     </div>
 
     {% if links %}
@@ -245,6 +247,44 @@
         </script>
     </div>
     {% endif %}
+
+    <br>
+
+    {% if nodes %}
+    <div class="container">
+        <div>
+            <p>Top similar papers</p>
+        </div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Abstract</th>
+                    <th scope="col">Graph</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for paper in nodes %}
+                <tr>
+                    <th scope="row">{{ paper.dist }}</th>
+                    <td><a href="{{ paper.s2Url }}"><b>{{ paper.title | truncate(80) | safe }}</b></a></td>
+                    <td>{{ paper.paperAbstract | truncate(300) | safe }}</td>
+                    <td><a href="{{ url_for('serve', ss_paper_id=paper.id) }}">Build graph</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <br>
+    </div>
+    {% endif %}
+
+    <div class="container">
+        <a href="#" class="o-scroll-up static" title="back to top">
+            <center><span class="o-scroll-up-text">Back to top</span></center>
+            <span class="o-scroll-up-icon" aria-hidden="true"></span>
+        </a>
+    </div>
 
     <!-- Copyright -->
     <div class="footer-copyright text-center py-3" id="copyright">Made by <a
