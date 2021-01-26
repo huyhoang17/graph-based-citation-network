@@ -5,7 +5,6 @@ kdd2019/
 data/
 ml-1m/
 models/
-assets/
 graph/
 *.ipynb
 *.zip
