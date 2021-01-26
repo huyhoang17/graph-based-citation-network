@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<head>
+
+    <style>
+        .link {
+            fill: none;
+            stroke: rgb(0, 8, 80);
+            stroke-width: 1px;
+        }
+
+        .node circle {
+            fill: rgb(177, 0, 0);
+            stroke: rgb(29, 29, 29);
+            stroke-width: 2px;
+        }
+
+        text {
+            font: 10px sans-serif;
+            pointer-events: none;
+        }
+
+        #header {
+            margin-top: 50px;
+        }
+
+        #copyright {
+            margin-bottom: 20px;
+        }
+
+        /* The sidebar menu */
+        .sidenav {
+            height: 100%;
+            /* Full-height: remove this if you want "auto" height */
+            width: 160px;
+            /* Set the width of the sidebar */
+            position: fixed;
+            /* Fixed Sidebar (stay in place on scroll) */
+            z-index: 1;
+            /* Stay on top */
+            top: 0;
+            /* Stay at the top */
+            left: 0;
+            background-color: rgb(195, 195, 195);
+            /* Black */
+            overflow-x: hidden;
+            /* Disable horizontal scroll */
+            padding-top: 20px;
+        }
+
+        /* The navigation menu links */
+        .sidenav a {
+            padding: 6px 8px 6px 16px;
+            text-decoration: none;
+            font-size: 25px;
+            color: #818181;
+            display: block;
+        }
+
+        /* When you mouse over the navigation links, change their color */
+        .sidenav a:hover {
+            color: #f1f1f1;
+        }
+
+        /* Style page content */
+        .main {
+            margin-left: 160px;
+            /* Same as the width of the sidebar */
+            padding: 0px 10px;
+        }
+
+        /* On smaller screens, where height is less than 450px, change the style of the sidebar (less padding and a smaller font size) */
+        @media screen and (max-height: 450px) {
+            .sidenav {
+                padding-top: 15px;
+            }
+
+            .sidenav a {
+                font-size: 18px;
+            }
+        }
+    </style>
+
+    <!-- Bootstrap CSS CDN -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.0/css/bootstrap.min.css"
+        integrity="sha384-9gVQ4dYFwwWSjIDZnLEWnxCjeSWFphJiwGPXr1jddIhOegiu1FwO5qRGvFXOdJZ4" crossorigin="anonymous">
+
+    <!-- Font Awesome JS -->
+    <script defer src="https://use.fontawesome.com/releases/v5.0.13/js/solid.js"
+        integrity="sha384-tzzSw1/Vo+0N5UhStP3bvwWPq+uvzCMfrN1fEFe+xBmv1C/AtVX5K0uZtmcHitFZ"
+        crossorigin="anonymous"></script>
+    <script defer src="https://use.fontawesome.com/releases/v5.0.13/js/fontawesome.js"
+        integrity="sha384-6OIrr52G08NpOFSZdxxz1xdNSndlD4vdcf/q2myIUVO0VsqaGHJsB0RaBE01VTOY"
+        crossorigin="anonymous"></script>
+
+</head>
+
+<body>
+
+    <!-- <div class="sidenav">
+
+        {% for node in nodes %}
+            <p>{{ node.paperAbstract }}</p>
+            <a href=""></a>
+        {% endfor %}
+    </div> -->
+
+    <div class="container" id="header">
+        <div class="page-header">
+            <p style="text-align:center">
+                <a href="{{ url_for('root') }}"><b>Explore paper citation network</b></a>
+            </p>
+        </div>
+
+        <form action="">
+            <div class="row" id="inputBar" style="margin:0 20%;">
+                <div class="input-group" style="text-align:center">
+                    <input id="inputField" type="text" class="form-control" name="search"
+                        placeholder="https://arxiv.org/abs/1706.02216"><br>
+                    <input type="submit" class="btn btn-primary" value="Build graph">
+                </div>
+            </div>
+        </form>
+        <br>
+    </div>
+
+
+    <div class="container" id="content">
+
+        {% if error_message %}
+        <div class="alert alert-secondary" role="alert">
+            {{ error_message }}
+        </div>
+        {% endif %}
+
+        {% if sample_nodes %}
+        <div>
+            <p>Random papers</p>
+        </div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Abstract</th>
+                    <th scope="col">Graph</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for paper in sample_nodes %}
+                <tr>
+                    <th scope="row"></th>
+                    <td><a href="{{ paper.ss_url }}"><b>{{ paper.title | truncate(100) | safe }}</b></a></td>
+                    <td>{{ paper.abstract | truncate(800) | safe }}</td>
+                    <td><a href="{{ url_for('serve', ss_paper_id=paper.id) }}">Build graph</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+
+    <div class="container">
+        <center><a href="{{ main_url }}">{{ main_title | truncate(80) | safe }}</a></center>
+    </div>
+
+    {% if links %}
+    <div class="container-fluid" id="visualize">
+        <script src="//d3js.org/d3.v3.min.js"></script>
+        <script>
+
+            // http://blog.thomsonreuters.com/index.php/mobile-patent-suits-graphic-of-the-day/
+            var links = {{ links | tojson }};
+            console.log(links);
+
+            var nodes = {};
+
+            // Compute the distinct nodes from the links.
+            links.forEach(function (link) {
+                link.source = nodes[link.source] || (nodes[link.source] = { name: link.source });
+                link.target = nodes[link.target] || (nodes[link.target] = { name: link.target });
+            });
+
+            console.log(nodes);
+
+            var width = 1920,
+                height = 1024;
+
+            var force = d3.layout.force()
+                .nodes(d3.values(nodes))
+                .links(links)
+                .size([width, height])
+                .linkDistance(500)
+                .charge(-100)
+                .on("tick", tick)
+                .start();
+
+            var svg = d3.select("body").append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            var link = svg.selectAll(".link")
+                .data(force.links())
+                .enter().append("line")
+                .attr("class", "link");
+
+            var node = svg.selectAll(".node")
+                .data(force.nodes())
+                .enter().append("g")
+                .attr("class", "node")
+                .on("mouseover", mouseover)
+                .on("mouseout", mouseout)
+                .call(force.drag);
+
+            node.append("circle")
+                .attr("r", 8);
+
+            node.append("text")
+                .attr("x", 12)
+                .attr("dy", ".35em")
+                .text(function (d) { return d.name; });
+
+            function tick() {
+                link
+                    .attr("x1", function (d) { return d.source.x; })
+                    .attr("y1", function (d) { return d.source.y; })
+                    .attr("x2", function (d) { return d.target.x; })
+                    .attr("y2", function (d) { return d.target.y; });
+
+                node
+                    .attr("transform", function (d) { return "translate(" + d.x + "," + d.y + ")"; });
+            }
+
+            function mouseover() {
+                d3.select(this).select("circle").transition()
+                    .duration(750)
+                    .attr("r", 16);
+            }
+
+            function mouseout() {
+                d3.select(this).select("circle").transition()
+                    .duration(750)
+                    .attr("r", 8);
+            }
+
+        </script>
+    </div>
+    {% endif %}
+
+    <br>
+
+    {% if nodes %}
+    <div class="container">
+        <div>
+            <p>Top similar papers</p>
+        </div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Abstract</th>
+                    <th scope="col">Graph</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for paper in nodes %}
+                <tr>
+                    <th scope="row">{{ paper.dist }}</th>
+                    <td><a href="{{ paper.s2Url }}"><b>{{ paper.title | truncate(80) | safe }}</b></a></td>
+                    <td>{{ paper.paperAbstract | truncate(300) | safe }}</td>
+                    <td><a href="{{ url_for('serve', ss_paper_id=paper.id) }}">Build graph</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <br>
+    </div>
+    {% endif %}
+
+    <div class="container">
+        <a href="#" class="o-scroll-up static" title="back to top">
+            <center><span class="o-scroll-up-text">Back to top</span></center>
+            <span class="o-scroll-up-icon" aria-hidden="true"></span>
+        </a>
+    </div>
+
+    <!-- Copyright -->
+    <div class="footer-copyright text-center py-3" id="copyright">Made by <a
+            href="https://research.sun-asterisk.com/team-ai">Sun AI Research team</a>
+    </div>
+    <!-- Copyright -->
+
+    <!-- jQuery CDN - Slim version (=without AJAX) -->
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+        integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+        crossorigin="anonymous"></script>
+    <!-- Popper.JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.0/umd/popper.min.js"
+        integrity="sha384-cs/chFZiN24E4KMATLdqdvsezGxaGsi4hLGOzlXwp5UZB1LY//20VyM2taTB4QvJ"
+        crossorigin="anonymous"></script>
+    <!-- Bootstrap JS -->
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.0/js/bootstrap.min.js"
+        integrity="sha384-uefMccjFJAIv6A+rW+L4AHf99KvxDjWSu1z9VI8SKNVmz4sk7buKt/6v9KI65qnm"
+        crossorigin="anonymous"></script>
+
+</body>
